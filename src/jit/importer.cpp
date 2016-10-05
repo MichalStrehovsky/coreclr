@@ -5737,6 +5737,65 @@ GenTreePtr Compiler::impImportStaticFieldAccess(CORINFO_RESOLVED_TOKEN* pResolve
         }
         break;
 
+#ifdef FEATURE_READYTORUN_COMPILER
+        case CORINFO_FIELD_STATIC_READYTORUN_HELPER:
+        {
+            assert(!compIsForInlining());
+
+            CORINFO_GENERICHANDLE_RESULT embedInfo;
+            info.compCompHnd->embedGenericHandle(pResolvedToken, FALSE, &embedInfo);
+            assert(embedInfo.lookup.lookupKind.needsRuntimeLookup);
+            
+            CORINFO_RUNTIME_LOOKUP_KIND kind = embedInfo.lookup.lookupKind.runtimeLookupKind;
+            GenTreePtr ctxTree;
+
+            // Collectible types requires that for shared generic code, if we use the generic context parameter
+            // that we report it. (This is a conservative approach, we could detect some cases particularly when the
+            // context parameter is this that we don't need the eager reporting logic.)
+            lvaGenericsContextUsed = true;
+
+            if (kind == CORINFO_LOOKUP_THISOBJ)
+            {
+                // this Object
+                ctxTree = gtNewLclvNode(info.compThisArg, TYP_REF);
+
+                // Vtable pointer of this object
+                ctxTree = gtNewOperNode(GT_IND, TYP_I_IMPL, ctxTree);
+                ctxTree->gtFlags |= GTF_EXCEPT; // Null-pointer exception
+                ctxTree->gtFlags |= GTF_IND_INVARIANT;
+            }
+            else
+            {
+                assert(kind == CORINFO_LOOKUP_METHODPARAM || kind == CORINFO_LOOKUP_CLASSPARAM);
+
+                ctxTree = gtNewLclvNode(info.compTypeCtxtArg, TYP_I_IMPL); // Exact method descriptor as passed in as last arg
+            }
+
+            var_types type = TYP_BYREF;
+
+            switch (pFieldInfo->helper)
+            {
+                case CORINFO_HELP_READYTORUN_NONGCTHREADSTATIC_BASE:
+                    type = TYP_I_IMPL;
+                    break;
+                case CORINFO_HELP_READYTORUN_GCSTATIC_BASE:
+                case CORINFO_HELP_READYTORUN_NONGCSTATIC_BASE:
+                case CORINFO_HELP_READYTORUN_GCTHREADSTATIC_BASE:
+                    break;
+                default:
+                    assert(!"unknown generic statics helper");
+                    break;
+            }
+
+            op1 = impReadyToRunHelperToTree(pResolvedToken, pFieldInfo->helper, type,
+                                            gtNewArgList(ctxTree), &embedInfo.lookup.lookupKind);
+
+            FieldSeqNode* fs = GetFieldSeqStore()->CreateSingleton(pResolvedToken->hField);
+            op1              = gtNewOperNode(GT_ADD, type, op1,
+                                new (this, GT_CNS_INT) GenTreeIntCon(TYP_I_IMPL, pFieldInfo->offset, fs));
+        }
+#endif
+
         case CORINFO_FIELD_STATIC_SHARED_STATIC_HELPER:
 #ifdef FEATURE_READYTORUN_COMPILER
             if (opts.IsReadyToRun())
@@ -12933,6 +12992,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     case CORINFO_FIELD_STATIC_RVA_ADDRESS:
                     case CORINFO_FIELD_STATIC_SHARED_STATIC_HELPER:
                     case CORINFO_FIELD_STATIC_GENERICS_STATIC_HELPER:
+					case CORINFO_FIELD_STATIC_READYTORUN_HELPER:
                         op1 = impImportStaticFieldAccess(&resolvedToken, (CORINFO_ACCESS_FLAGS)aflags, &fieldInfo,
                                                          lclTyp);
                         break;

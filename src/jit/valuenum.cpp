@@ -7139,9 +7139,11 @@ VNFunc Compiler::fgValueNumberHelperMethVNFunc(CorInfoHelpFunc helpFunc)
             break;
 
         case CORINFO_HELP_GETGENERICS_GCSTATIC_BASE:
+        case CORINFO_HELP_READYTORUN_GCSTATIC_BASE:
             vnf = VNF_GetgenericsGcstaticBase;
             break;
         case CORINFO_HELP_GETGENERICS_NONGCSTATIC_BASE:
+        case CORINFO_HELP_READYTORUN_NONGCSTATIC_BASE:
             vnf = VNF_GetgenericsNongcstaticBase;
             break;
         case CORINFO_HELP_GETSHARED_GCSTATIC_BASE:
@@ -7169,9 +7171,11 @@ VNFunc Compiler::fgValueNumberHelperMethVNFunc(CorInfoHelpFunc helpFunc)
             vnf = VNF_ClassinitSharedDynamicclass;
             break;
         case CORINFO_HELP_GETGENERICS_GCTHREADSTATIC_BASE:
+        case CORINFO_HELP_READYTORUN_GCTHREADSTATIC_BASE:
             vnf = VNF_GetgenericsGcthreadstaticBase;
             break;
         case CORINFO_HELP_GETGENERICS_NONGCTHREADSTATIC_BASE:
+        case CORINFO_HELP_READYTORUN_NONGCTHREADSTATIC_BASE:
             vnf = VNF_GetgenericsNongcthreadstaticBase;
             break;
         case CORINFO_HELP_GETSHARED_GCTHREADSTATIC_BASE:

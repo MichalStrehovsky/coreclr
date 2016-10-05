@@ -1417,6 +1417,9 @@ void HelperCallProperties::init()
             case CORINFO_HELP_GETGENERICS_GCSTATIC_BASE:
             case CORINFO_HELP_GETGENERICS_NONGCSTATIC_BASE:
             case CORINFO_HELP_READYTORUN_STATIC_BASE:
+            case CORINFO_HELP_READYTORUN_NONGCSTATIC_BASE:
+            case CORINFO_HELP_READYTORUN_GCSTATIC_BASE:
+            case CORINFO_HELP_READYTORUN_GCTHREADSTATIC_BASE:
 
                 // These may invoke static class constructors
                 // These can throw InvalidProgram exception if the class can not be constructed

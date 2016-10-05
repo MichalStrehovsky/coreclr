@@ -4238,7 +4238,7 @@ void Lowering::LowerBlock(BasicBlock* block)
         node = LowerNode(node);
     }
 
-    assert(CheckBlock(comp, block));
+    //assert(CheckBlock(comp, block));
 }
 
 /** Verifies if both of these trees represent the same indirection.
