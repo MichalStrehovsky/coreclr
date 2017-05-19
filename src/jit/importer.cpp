@@ -3711,6 +3711,26 @@ GenTreePtr Compiler::impIntrinsic(GenTreePtr            newobjThis,
             break;
         }
 
+        case CORINFO_INTRINSIC_GetRawHandle:
+        {
+            CORINFO_RESOLVED_TOKEN resolvedToken;
+            resolvedToken.hClass = nullptr;
+            resolvedToken.hMethod = method;
+            resolvedToken.tokenContext = MAKE_METHODCONTEXT(info.compMethodHnd);
+            resolvedToken.tokenScope = info.compScopeHnd;
+            resolvedToken.token = memberRef;
+            resolvedToken.tokenType = CORINFO_TOKENKIND_Method;
+
+            CORINFO_GENERICHANDLE_RESULT embedInfo;
+            info.compCompHnd->embedGenericHandle(&resolvedToken, FALSE, &embedInfo);
+
+            retNode = impLookupToTree(&resolvedToken, &embedInfo.lookup, gtTokenToIconFlags(memberRef),
+                embedInfo.compileTimeHandle);
+            // What now? I have an integer constant and need a struct
+
+            break;
+        }
+
         default:
             /* Unknown intrinsic */
             break;
