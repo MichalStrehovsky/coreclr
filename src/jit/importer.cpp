@@ -3724,9 +3724,18 @@ GenTreePtr Compiler::impIntrinsic(GenTreePtr            newobjThis,
             CORINFO_GENERICHANDLE_RESULT embedInfo;
             info.compCompHnd->embedGenericHandle(&resolvedToken, FALSE, &embedInfo);
 
-            retNode = impLookupToTree(&resolvedToken, &embedInfo.lookup, gtTokenToIconFlags(memberRef),
+            GenTreePtr eeTypePtrOfNode = impLookupToTree(&resolvedToken, &embedInfo.lookup, gtTokenToIconFlags(memberRef),
                 embedInfo.compileTimeHandle);
-            // What now? I have an integer constant and need a struct
+            if (eeTypePtrOfNode == nullptr)
+                return nullptr;
+
+            unsigned eeSlot = lvaGrabTemp(true DEBUGARG("eeTypePtrOf"));
+            impAssignTempGen(eeSlot, eeTypePtrOfNode, clsHnd, (unsigned)CHECK_SPILL_NONE); 
+            GenTreePtr lclVar     = gtNewLclvNode(eeSlot, TYP_I_IMPL); 
+            GenTreePtr lclVarAddr = gtNewOperNode(GT_ADDR, TYP_I_IMPL, lclVar); 
+            var_types  resultType = JITtype2varType(sig->retType); 
+
+            retNode = gtNewOperNode(GT_IND, resultType, lclVarAddr);
 
             break;
         }
@@ -6689,6 +6698,9 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
         {
             call = impIntrinsic(newobjThis, clsHnd, methHnd, sig, pResolvedToken->token, readonlyCall,
                                 (canTailCall && (tailCall != 0)), &intrinsicID);
+
+            if (compIsForInlining() && compInlineResult->IsFailure())
+                return callRetTyp;
 
             if (call != nullptr)
             {
