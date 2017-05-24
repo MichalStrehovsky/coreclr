@@ -44,8 +44,7 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
 
     // Load the address where the finally funclet should return into LR.
     // The funclet prolog/epilog will do "push {lr}" / "pop {pc}" to do the return.
-    getEmitter()->emitIns_R_L(INS_movw, EA_4BYTE_DSP_RELOC, bbFinallyRet, REG_LR);
-    getEmitter()->emitIns_R_L(INS_movt, EA_4BYTE_DSP_RELOC, bbFinallyRet, REG_LR);
+    genMov32RelocatableDisplacement(bbFinallyRet, REG_LR);
 
     // Jump to the finally BB
     inst_JMP(EJ_jmp, block->bbJumpDest);
@@ -63,8 +62,7 @@ BasicBlock* CodeGen::genCallFinally(BasicBlock* block)
 // genEHCatchRet:
 void CodeGen::genEHCatchRet(BasicBlock* block)
 {
-    getEmitter()->emitIns_R_L(INS_movw, EA_4BYTE_DSP_RELOC, block->bbJumpDest, REG_INTRET);
-    getEmitter()->emitIns_R_L(INS_movt, EA_4BYTE_DSP_RELOC, block->bbJumpDest, REG_INTRET);
+    genMov32RelocatableDisplacement(block->bbJumpDest, REG_INTRET);
 }
 
 //------------------------------------------------------------------------
@@ -82,8 +80,7 @@ void CodeGen::instGen_Set_Reg_To_Imm(emitAttr size, regNumber reg, ssize_t imm, 
 
     if (EA_IS_RELOC(size))
     {
-        getEmitter()->emitIns_R_I(INS_movw, size, reg, imm);
-        getEmitter()->emitIns_R_I(INS_movt, size, reg, imm);
+        genMov32RelocatableImmediate(size, imm, reg);
     }
     else if (imm == 0)
     {
@@ -681,8 +678,7 @@ void CodeGen::genJumpTable(GenTree* treeNode)
 
     getEmitter()->emitDataGenEnd();
 
-    getEmitter()->emitIns_R_D(INS_movw, EA_HANDLE_CNS_RELOC, jmpTabBase, treeNode->gtRegNum);
-    getEmitter()->emitIns_R_D(INS_movt, EA_HANDLE_CNS_RELOC, jmpTabBase, treeNode->gtRegNum);
+    genMov32RelocatableDataLabel(jmpTabBase, treeNode->gtRegNum);
 
     genProduceReg(treeNode);
 }
@@ -1230,6 +1226,53 @@ void CodeGen::genCodeForDivMod(GenTreeOp* tree)
 }
 
 //------------------------------------------------------------------------
+// genCkfinite: Generate code for ckfinite opcode.
+//
+// Arguments:
+//    treeNode - The GT_CKFINITE node
+//
+// Return Value:
+//    None.
+//
+// Assumptions:
+//    GT_CKFINITE node has reserved an internal register.
+//
+void CodeGen::genCkfinite(GenTreePtr treeNode)
+{
+    assert(treeNode->OperGet() == GT_CKFINITE);
+
+    emitter*  emit       = getEmitter();
+    var_types targetType = treeNode->TypeGet();
+    regNumber intReg     = treeNode->GetSingleTempReg();
+    regNumber fpReg      = genConsumeReg(treeNode->gtOp.gtOp1);
+    regNumber targetReg  = treeNode->gtRegNum;
+
+    // Extract and sign-extend the exponent into an integer register
+    if (targetType == TYP_FLOAT)
+    {
+        emit->emitIns_R_R(INS_vmov_f2i, EA_4BYTE, intReg, fpReg);
+        emit->emitIns_R_R_I_I(INS_sbfx, EA_4BYTE, intReg, intReg, 23, 8);
+    }
+    else
+    {
+        assert(targetType == TYP_DOUBLE);
+        emit->emitIns_R_R(INS_vmov_f2i, EA_4BYTE, intReg, REG_NEXT(fpReg));
+        emit->emitIns_R_R_I_I(INS_sbfx, EA_4BYTE, intReg, intReg, 20, 11);
+    }
+
+    // If exponent is all 1's, throw ArithmeticException
+    emit->emitIns_R_I(INS_add, EA_4BYTE, intReg, 1, INS_FLAGS_SET);
+    genJumpToThrowHlpBlk(EJ_eq, SCK_ARITH_EXCPN);
+
+    // If it's a finite value, copy it to targetReg
+    if (targetReg != fpReg)
+    {
+        emit->emitIns_R_R(ins_Copy(targetType), emitTypeSize(treeNode), targetReg, fpReg);
+    }
+    genProduceReg(treeNode);
+}
+
+//------------------------------------------------------------------------
 // genCodeForCompare: Produce code for a GT_EQ/GT_NE/GT_LT/GT_LE/GT_GE/GT_GT node.
 //
 // Arguments:
@@ -1241,10 +1284,12 @@ void CodeGen::genCodeForCompare(GenTreeOp* tree)
     // TODO-ARM-CQ: Check for the case where we can simply transfer the carry bit to a register
     //         (signed < or >= where targetReg != REG_NA)
 
-    GenTreePtr op1 = tree->gtOp1->gtEffectiveVal();
-    GenTreePtr op2 = tree->gtOp2->gtEffectiveVal();
+    GenTreePtr op1     = tree->gtOp1->gtEffectiveVal();
+    GenTreePtr op2     = tree->gtOp2->gtEffectiveVal();
+    var_types  op1Type = op1->TypeGet();
+    var_types  op2Type = op2->TypeGet();
 
-    if (varTypeIsLong(op1))
+    if (varTypeIsLong(op1Type))
     {
 #ifdef DEBUG
         // The result of an unlowered long compare on a 32-bit target must either be
@@ -1261,43 +1306,26 @@ void CodeGen::genCodeForCompare(GenTreeOp* tree)
     }
     else
     {
+        assert(!varTypeIsLong(op2Type));
+
         regNumber targetReg = tree->gtRegNum;
         emitter*  emit      = getEmitter();
-        emitAttr  cmpAttr;
 
         genConsumeIfReg(op1);
         genConsumeIfReg(op2);
 
-        if (varTypeIsFloating(op1))
+        if (varTypeIsFloating(op1Type))
         {
-            assert(op1->TypeGet() == op2->TypeGet());
-            instruction ins = INS_vcmp;
-            cmpAttr         = emitTypeSize(op1->TypeGet());
-            emit->emitInsBinary(ins, cmpAttr, op1, op2);
+            assert(op1Type == op2Type);
+            emit->emitInsBinary(INS_vcmp, emitTypeSize(op1Type), op1, op2);
             // vmrs with register 0xf has special meaning of transferring flags
             emit->emitIns_R(INS_vmrs, EA_4BYTE, REG_R15);
         }
         else
         {
-            var_types op1Type = op1->TypeGet();
-            var_types op2Type = op2->TypeGet();
             assert(!varTypeIsFloating(op2Type));
-            instruction ins = INS_cmp;
-            if (op1Type == op2Type)
-            {
-                cmpAttr = emitTypeSize(op1Type);
-            }
-            else
-            {
-                var_types cmpType    = TYP_INT;
-                bool      op1Is64Bit = (varTypeIsLong(op1Type) || op1Type == TYP_REF);
-                bool      op2Is64Bit = (varTypeIsLong(op2Type) || op2Type == TYP_REF);
-                NYI_IF(op1Is64Bit || op2Is64Bit, "Long compare");
-                assert(!op1->isUsedFromMemory() || op1Type == op2Type);
-                assert(!op2->isUsedFromMemory() || op1Type == op2Type);
-                cmpAttr = emitTypeSize(cmpType);
-            }
-            emit->emitInsBinary(ins, cmpAttr, op1, op2);
+            var_types cmpType = (op1Type == op2Type) ? op1Type : TYP_INT;
+            emit->emitInsBinary(INS_cmp, emitTypeSize(cmpType), op1, op2);
         }
 
         // Are we evaluating this into a register?
@@ -1307,22 +1335,6 @@ void CodeGen::genCodeForCompare(GenTreeOp* tree)
             genProduceReg(tree);
         }
     }
-}
-
-//------------------------------------------------------------------------
-// genCodeForJcc: Produce code for a GT_JCC node.
-//
-// Arguments:
-//    tree - the node
-//
-void CodeGen::genCodeForJcc(GenTreeJumpCC* tree)
-{
-    assert(compiler->compCurBB->bbJumpKind == BBJ_COND);
-
-    CompareKind  compareKind = ((tree->gtFlags & GTF_UNSIGNED) != 0) ? CK_UNSIGNED : CK_SIGNED;
-    emitJumpKind jumpKind    = genJumpKindForOper(tree->gtCondition, compareKind);
-
-    inst_JMP(jumpKind, compiler->compCurBB->bbJumpDest);
 }
 
 //------------------------------------------------------------------------
@@ -1347,6 +1359,7 @@ void CodeGen::genCodeForReturnTrap(GenTreeOp* tree)
 
     emitJumpKind jmpEqual = genJumpKindForOper(GT_EQ, CK_SIGNED);
     inst_JMP(jmpEqual, skipLabel);
+
     // emit the call to the EE-helper that stops for GC (or other reasons)
 
     genEmitHelperCall(CORINFO_HELP_STOP_FOR_GC, 0, EA_UNKNOWN);
@@ -1401,24 +1414,15 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
     }
     else // A normal store, not a WriteBarrier store
     {
-        bool reverseOps  = ((tree->gtFlags & GTF_REVERSE_OPS) != 0);
         bool dataIsUnary = false;
 
         // We must consume the operands in the proper execution order,
         // so that liveness is updated appropriately.
-        if (!reverseOps)
-        {
-            genConsumeAddress(addr);
-        }
+        genConsumeAddress(addr);
 
         if (!data->isContained())
         {
             genConsumeRegs(data);
-        }
-
-        if (reverseOps)
-        {
-            genConsumeAddress(addr);
         }
 
         emit->emitInsLoadStoreOp(ins_Store(targetType), emitTypeSize(tree), data->gtRegNum, tree);
@@ -1856,9 +1860,11 @@ void CodeGen::genFloatToIntCast(GenTreePtr treeNode)
 
     genConsumeOperands(treeNode->AsOp());
 
+    regNumber tmpReg = treeNode->GetSingleTempReg();
+
     assert(insVcvt != INS_invalid);
-    getEmitter()->emitIns_R_R(insVcvt, dstSize, op1->gtRegNum, op1->gtRegNum);
-    getEmitter()->emitIns_R_R(INS_vmov_f2i, dstSize, treeNode->gtRegNum, op1->gtRegNum);
+    getEmitter()->emitIns_R_R(insVcvt, dstSize, tmpReg, op1->gtRegNum);
+    getEmitter()->emitIns_R_R(INS_vmov_f2i, dstSize, treeNode->gtRegNum, tmpReg);
 
     genProduceReg(treeNode);
 }
@@ -1977,11 +1983,32 @@ void CodeGen::genStoreLongLclVar(GenTree* treeNode)
     {
         assert((op1->gtFlags & GTF_MUL_64RSLT) != 0);
 
+        GenTreeMulLong* mul = op1->AsMulLong();
+
         // Stack store
-        getEmitter()->emitIns_S_R(ins_Store(TYP_INT), emitTypeSize(TYP_INT), REG_LNGRET_LO, lclNum, 0);
-        getEmitter()->emitIns_S_R(ins_Store(TYP_INT), emitTypeSize(TYP_INT), REG_LNGRET_HI, lclNum,
+        getEmitter()->emitIns_S_R(ins_Store(TYP_INT), emitTypeSize(TYP_INT), mul->gtRegNum, lclNum, 0);
+        getEmitter()->emitIns_S_R(ins_Store(TYP_INT), emitTypeSize(TYP_INT), mul->gtOtherReg, lclNum,
                                   genTypeSize(TYP_INT));
     }
+}
+
+//------------------------------------------------------------------------
+// genCodeForMulLong: Generates code for int*int->long multiplication
+//
+// Arguments:
+//    node - the GT_MUL_LONG node
+//
+// Return Value:
+//    None.
+//
+void CodeGen::genCodeForMulLong(GenTreeMulLong* node)
+{
+    genConsumeOperands(node);
+    GenTree*    src1 = node->gtOp1;
+    GenTree*    src2 = node->gtOp2;
+    instruction ins  = node->IsUnsigned() ? INS_umull : INS_smull;
+    getEmitter()->emitIns_R_R_R_R(ins, EA_4BYTE, node->gtRegNum, node->gtOtherReg, src1->gtRegNum, src2->gtRegNum);
+    genProduceReg(node);
 }
 
 #endif // _TARGET_ARM_

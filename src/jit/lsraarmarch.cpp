@@ -305,6 +305,14 @@ void Lowering::TreeNodeInfoInitIndir(GenTreePtr indirTree)
         // This offset can't be contained in the ldr/str instruction, so we need an internal register
         info->internalIntCount = 1;
     }
+    else if (varTypeIsFloating(indirTree))
+    {
+        // TODO-ARM: We can narrow the condition where an internal register is really required.
+        //           For example, we don't need an internal regsiter where offset can be contained.
+
+        // For float ldr/str(vldr/vstr), we need an internal register to compute address.
+        info->internalIntCount = 1;
+    }
 }
 
 //------------------------------------------------------------------------
@@ -654,8 +662,13 @@ void Lowering::TreeNodeInfoInitPutArgStk(GenTreePutArgStk* argNode, fgArgTabEntr
         }
         else
         {
+#ifdef _TARGET_ARM64_
             // We could use a ldp/stp sequence so we need two internal registers
             argNode->gtLsraInfo.internalIntCount = 2;
+#else  // _TARGET_ARM_
+            // We could use a ldr/str sequence so we need a internal register
+            argNode->gtLsraInfo.internalIntCount = 1;
+#endif // _TARGET_ARM_
 
             if (putArgChild->OperGet() == GT_OBJ)
             {

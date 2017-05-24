@@ -71,7 +71,6 @@ namespace System
         FullName,
     }
 
-    [Serializable]
     internal class RuntimeType :
         System.Reflection.TypeInfo, ISerializable, ICloneable
     {
@@ -3789,6 +3788,8 @@ namespace System
         #endregion
 
         #region Misc
+        public sealed override bool HasSameMetadataDefinitionAs(MemberInfo other) => HasSameMetadataDefinitionAsCore<RuntimeType>(other);
+
         public override bool IsTypeDefinition
         {
             get { return RuntimeTypeHandle.IsTypeDefinition(this); }
@@ -4910,7 +4911,6 @@ namespace System
     // method (RuntimeType) and an instance of this type will work around the reason to have this type in the 
     // first place. However given RuntimeType is not public all its methods are protected and require full trust
     // to be accessed
-    [Serializable]
     internal class ReflectionOnlyType : RuntimeType
     {
         private ReflectionOnlyType() { }
