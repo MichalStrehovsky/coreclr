@@ -751,13 +751,12 @@ void CodeGen::genPutArgStk(GenTreePutArgStk* treeNode)
                 if (varNode != nullptr)
                 {
                     // Load from our varNumImp source
-                    emit->emitIns_R_S(INS_ldr, emitTypeSize(type), loReg, varNumInp, 0);
+                    emit->emitIns_R_S(INS_ldr, emitTypeSize(type), loReg, varNumInp, structOffset);
                 }
                 else
                 {
                     // check for case of destroying the addrRegister while we still need it
-                    assert(loReg != addrReg);
-                    noway_assert(remainingSize == TARGET_POINTER_SIZE);
+                    assert(loReg != addrReg || remainingSize == TARGET_POINTER_SIZE);
 
                     // Load from our address expression source
                     emit->emitIns_R_R_I(INS_ldr, emitTypeSize(type), loReg, addrReg, structOffset);
@@ -1542,6 +1541,14 @@ void CodeGen::genCallInstruction(GenTreeCall* call)
                 }
 
                 argReg = genRegArgNext(argReg);
+
+#if defined(_TARGET_ARM_)
+                // A double register is modelled as an even-numbered single one
+                if (putArgRegNode->TypeGet() == TYP_DOUBLE)
+                {
+                    argReg = genRegArgNext(argReg);
+                }
+#endif // _TARGET_ARM_
             }
         }
         else

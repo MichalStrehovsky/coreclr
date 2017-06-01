@@ -104,6 +104,26 @@ bool Lowering::IsSafeToContainMem(GenTree* parentNode, GenTree* childNode)
 }
 
 //------------------------------------------------------------------------
+// IsContainableMemoryOp: Checks whether this is a memory op that can be contained.
+//
+// Arguments:
+//    node - the node of interest.
+//
+// Notes:
+//    This differs from the isMemoryOp() method on GenTree because it checks for
+//    the case of an untracked local. Note that this won't include locals that
+//    for some reason do not become register candidates, nor those that get
+//    spilled.
+//
+// Return value:
+//    True if this will definitely be a memory reference that could be contained.
+//
+bool Lowering::IsContainableMemoryOp(GenTree* node)
+{
+    return node->isMemoryOp() || (node->IsLocal() && !comp->lvaTable[node->AsLclVar()->gtLclNum].lvTracked);
+}
+
+//------------------------------------------------------------------------
 
 // This is the main entry point for Lowering.
 GenTree* Lowering::LowerNode(GenTree* node)
@@ -2007,7 +2027,15 @@ GenTree* Lowering::LowerTailCallViaHelper(GenTreeCall* call, GenTree* callTarget
 void Lowering::LowerCompare(GenTree* cmp)
 {
 #ifndef _TARGET_64BIT_
+
+#ifdef _TARGET_ARM_
+    // TODO-ARM: Later ARM32 should make use of same condition of x86 once support for GT_CMP and GT_SETCC is added.
+    LIR::Use cmpUse;
+    if ((cmp->gtGetOp1()->TypeGet() == TYP_LONG) && BlockRange().TryGetUse(cmp, &cmpUse) &&
+        cmpUse.User()->OperIs(GT_JTRUE))
+#elif defined(_TARGET_X86_)
     if (cmp->gtGetOp1()->TypeGet() == TYP_LONG)
+#endif
     {
 // TODO-ARM: This code should be enabled for ARM32 once support for GT_CMP and GT_SETCC is added.
 #if _TARGET_X86_
@@ -2427,7 +2455,7 @@ void Lowering::LowerCompare(GenTree* cmp)
         GenTreeIntCon* op2      = cmp->gtGetOp2()->AsIntCon();
         ssize_t        op2Value = op2->IconValue();
 
-        if (op1->isMemoryOp() && varTypeIsSmall(op1Type) && genTypeCanRepresentValue(op1Type, op2Value))
+        if (IsContainableMemoryOp(op1) && varTypeIsSmall(op1Type) && genTypeCanRepresentValue(op1Type, op2Value))
         {
             //
             // If op1's type is small then try to narrow op2 so it has the same type as op1.
@@ -2457,7 +2485,7 @@ void Lowering::LowerCompare(GenTree* cmp)
                 // the result of bool returning calls.
                 //
 
-                if (castOp->OperIs(GT_CALL, GT_LCL_VAR) || castOp->OperIsLogical() || castOp->isMemoryOp())
+                if (castOp->OperIs(GT_CALL, GT_LCL_VAR) || castOp->OperIsLogical() || IsContainableMemoryOp(castOp))
                 {
                     assert(!castOp->gtOverflowEx()); // Must not be an overflow checking operation
 
@@ -2502,7 +2530,7 @@ void Lowering::LowerCompare(GenTree* cmp)
                 cmp->gtOp.gtOp1 = andOp1;
                 cmp->gtOp.gtOp2 = andOp2;
 
-                if (andOp1->isMemoryOp() && andOp2->IsIntegralConst())
+                if (IsContainableMemoryOp(andOp1) && andOp2->IsIntegralConst())
                 {
                     //
                     // For "test" we only care about the bits that are set in the second operand (mask).
