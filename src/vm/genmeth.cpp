@@ -313,7 +313,7 @@ InstantiatedMethodDesc::NewInstantiatedMethodDesc(MethodTable *pExactMT,
         PRECONDITION(methodInst.GetNumArgs() == pGenericMDescInRepMT->GetNumGenericMethodArgs());
         POSTCONDITION(CheckPointer(RETVAL));
         POSTCONDITION(RETVAL->IsRestored());
-        POSTCONDITION(getWrappedCode == RETVAL->IsSharedByGenericInstantiations());
+        //POSTCONDITION(getWrappedCode == RETVAL->IsSharedByGenericInstantiations());
         POSTCONDITION(methodInst.IsEmpty() || RETVAL->HasMethodInstantiation());
     }
     CONTRACT_END;
@@ -331,6 +331,8 @@ InstantiatedMethodDesc::NewInstantiatedMethodDesc(MethodTable *pExactMT,
         _ASSERTE(pCanonMT == pExactMT);
         _ASSERTE(pExactMT->IsSharedByGenericInstantiations() || ClassLoader::IsSharableInstantiation(methodInst));
 
+        if (methodInst.IsEmpty())
+            pWrappedMD = pGenericMDescInRepMT;
     }
 
     InstantiatedMethodDesc *pNewMD;
@@ -833,7 +835,7 @@ MethodDesc::FindOrCreateAssociatedMethodDesc(MethodDesc* pDefMD,
         PRECONDITION(!forceBoxedEntryPoint || !pDefMD->IsStatic());
 
         // For remotable methods we better not be allowing instantiation parameters.
-        PRECONDITION(!forceRemotableMethod || !allowInstParam);
+        //PRECONDITION(!forceRemotableMethod || !allowInstParam);
 
         POSTCONDITION(((RETVAL == NULL) && !allowCreate) || CheckPointer(RETVAL));
         POSTCONDITION(((RETVAL == NULL) && !allowCreate) || RETVAL->IsRestored());

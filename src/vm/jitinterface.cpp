@@ -5524,6 +5524,7 @@ void CEEInfo::getCallInfo(
             // No need to null check - the dispatch code will deal with null this.
             pResult->nullInstanceCheck = FALSE;
         }
+
 #ifdef STUB_DISPATCH_PORTABLE
         pResult->kind = CORINFO_VIRTUALCALL_LDVIRTFTN;
 #else // STUB_DISPATCH_PORTABLE
@@ -5552,6 +5553,18 @@ void CEEInfo::getCallInfo(
             if (!(flags & CORINFO_CALLINFO_KINDONLY) && !isVerifyOnly())
             {
 #ifndef CROSSGEN_COMPILE
+                if (!pTargetMD->IsAbstract() && pTargetMD->HasClassInstantiation())
+                {
+                    pTargetMD = MethodDesc::FindOrCreateAssociatedMethodDesc(
+                        pTargetMD,
+                        exactType.AsMethodTable(),
+                        FALSE,                  // forceBoxedEntryPoint
+                        Instantiation(),        // for method themselves that are generic
+                        TRUE,                   // allowInstParam
+                        TRUE                    // forceRemoteableMethod
+                    );
+                }
+                
                 // We shouldn't be using GetLoaderAllocator here because for LCG, we need to get the 
                 // VirtualCallStubManager from where the stub will be used. 
                 // For normal methods there is no difference.
@@ -5770,8 +5783,7 @@ void CEEInfo::getCallInfo(
 
     pResult->methodFlags = getMethodAttribsInternal(pResult->hMethod);
 
-    SignatureKind signatureKind = flags & CORINFO_CALLINFO_CALLVIRT ? SK_VIRTUAL_CALLSITE : SK_CALLSITE;
-    getMethodSigInternal(pResult->hMethod, &pResult->sig, (pResult->hMethod == pResolvedToken->hMethod) ? pResolvedToken->hClass : NULL, signatureKind);
+    getMethodSigInternal(pResult->hMethod, &pResult->sig, (pResult->hMethod == pResolvedToken->hMethod) ? pResolvedToken->hClass : NULL);
 
     if (flags & CORINFO_CALLINFO_VERIFICATION)
     {
