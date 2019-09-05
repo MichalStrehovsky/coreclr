@@ -443,6 +443,11 @@ build_CoreLib()
         exit $exit_code
     fi
 
+    if [[ "$__BuildManagedTools" -eq "1" ]]; then
+        echo "Publishing crossgen2 for $__BuildOS-$__BuildArch"
+        "$__ProjectRoot/dotnet.sh" --self-contained -r $__BuildOS-$__BuildArch -o "$__BinDir/crossgen2" "$__ProjectRoot/src/tools/crossgen2/crossgen2/crossgen2.csproj"
+    fi
+
     local __CoreLibILDir=$__BinDir/IL
 
     if [ $__SkipCrossgen == 1 ]; then
