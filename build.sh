@@ -444,8 +444,8 @@ build_CoreLib()
     fi
 
     if [[ "$__BuildManagedTools" -eq "1" ]]; then
-        echo "Publishing crossgen2 for $__BuildOS-$__BuildArch"
-        "$__ProjectRoot/dotnet.sh" --self-contained -r $__BuildOS-$__BuildArch -o "$__BinDir/crossgen2" "$__ProjectRoot/src/tools/crossgen2/crossgen2/crossgen2.csproj"
+        echo "Publishing crossgen2 for $__DistroRid"
+        "$__ProjectRoot/dotnet.sh" publish --self-contained -r $__DistroRid -o "$__BinDir/crossgen2" "$__ProjectRoot/src/tools/crossgen2/crossgen2/crossgen2.csproj"
     fi
 
     local __CoreLibILDir=$__BinDir/IL
