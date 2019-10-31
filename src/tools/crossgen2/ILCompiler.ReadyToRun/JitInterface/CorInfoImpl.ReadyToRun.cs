@@ -638,6 +638,9 @@ namespace Internal.JitInterface
 
                 if (resultDef is MethodDesc)
                 {
+                    if (resultDef is IL.Stubs.PInvokeTargetNativeMethod rawPinvoke)
+                        resultDef = rawPinvoke.Target;
+
                     Debug.Assert(resultDef is EcmaMethod);
                     Debug.Assert(_compilation.NodeFactory.CompilationModuleGroup.VersionsWithType(((EcmaMethod)resultDef).OwningType));
                     token = (mdToken)MetadataTokens.GetToken(((EcmaMethod)resultDef).Handle);
@@ -1375,6 +1378,10 @@ namespace Internal.JitInterface
                         {
                             nonUnboxingMethod = methodToCall.GetUnboxedMethod();
                         }
+                        if (nonUnboxingMethod is IL.Stubs.PInvokeTargetNativeMethod rawPinvoke)
+                        {
+                            nonUnboxingMethod = rawPinvoke.Target;
+                        }
 
                         // READYTORUN: FUTURE: Direct calls if possible
                         pResult->codePointerOrStubLookup.constLookup = CreateConstLookupToSymbol(
@@ -1910,7 +1917,10 @@ namespace Internal.JitInterface
 
         private void getAddressOfPInvokeTarget(CORINFO_METHOD_STRUCT_* method, ref CORINFO_CONST_LOOKUP pLookup)
         {
-            EcmaMethod ecmaMethod = (EcmaMethod)HandleToObject(method);
+            MethodDesc methodDesc = HandleToObject(method);
+            if (methodDesc is IL.Stubs.PInvokeTargetNativeMethod rawPInvoke)
+                methodDesc = rawPInvoke.Target;
+            EcmaMethod ecmaMethod = (EcmaMethod)methodDesc;
             ModuleToken moduleToken = new ModuleToken(ecmaMethod.Module, ecmaMethod.Handle);
             MethodWithToken methodWithToken = new MethodWithToken(ecmaMethod, moduleToken, constrainedType: null);
             
@@ -1928,8 +1938,13 @@ namespace Internal.JitInterface
 
             if (handle != null)
             {
-                EcmaMethod method = (EcmaMethod)HandleToObject(handle);
-                return MethodRequiresMarshaling(method);
+                var method = HandleToObject(handle);
+                if (method.IsRawPInvoke())
+                {
+                    return false;
+                }
+
+                return ((IL.Stubs.PInvokeILStubMethodIL)_compilation.GetMethodIL(method))?.IsStubRequired ?? false;
             }
             else
             {

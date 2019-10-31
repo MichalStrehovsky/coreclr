@@ -93,18 +93,13 @@ namespace Internal.IL.Stubs
                 nativeParameterTypes[i - 1] = _marshallers[i].NativeParameterType;
             }
 
-            callsiteSetupCodeStream.Emit(ILOpcode.call, emitter.NewToken(
-                            stubHelpersType.GetKnownMethod("GetStubContext", null)));
-            callsiteSetupCodeStream.Emit(ILOpcode.call, emitter.NewToken(
-                            stubHelpersType.GetKnownMethod("GetNDirectTarget", null)));
-            
-            MethodSignatureFlags unmanagedCallConv = _importMetadata.Flags.UnmanagedCallingConvention;
-
             MethodSignature nativeSig = new MethodSignature(
-                _targetMethod.Signature.Flags | unmanagedCallConv, 0, nativeReturnType,
+                _targetMethod.Signature.Flags, 0, nativeReturnType,
                 nativeParameterTypes);
 
-            callsiteSetupCodeStream.Emit(ILOpcode.calli, emitter.NewToken(nativeSig));
+            var rawTargetMethod = new PInvokeTargetNativeMethod(_targetMethod, nativeSig);
+
+            callsiteSetupCodeStream.Emit(ILOpcode.call, emitter.NewToken(rawTargetMethod));
 
             // if the SetLastError flag is set in DllImport, call the PInvokeMarshal.
             // SaveLastWin32Error so that last error can be used later by calling 
